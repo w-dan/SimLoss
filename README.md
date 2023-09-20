@@ -5,7 +5,7 @@ A pipelinie to introduce a model as a text similarity score.
 
 Made by:
 
-https://github.com/AlvaroTena
-https://github.com/ElCharcos
-https://github.com/Blitty-Codes
-https://github.com/w-dan
+- [Álvaro Tena](https://github.com/AlvaroTena)
+- [ElCharcos](https://github.com/ElCharcos)
+- [Blitty-Codes](https://github.com/Blitty-Codes)
+- [w-dan](https://github.com/w-dan)
