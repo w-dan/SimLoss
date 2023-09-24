@@ -7,6 +7,8 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
+python-dotenv = "^1.0.0"
+hugchat = "^0.2.7"
 
 
 [build-system]
