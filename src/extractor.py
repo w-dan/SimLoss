@@ -1,6 +1,7 @@
 import os
 import re
 import pandas as pd
+import json
 from dotenv import load_dotenv
 from hugchat import hugchat
 from hugchat.login import Login
@@ -11,6 +12,7 @@ EMAIL = os.getenv("EMAIL")
 PASSWORD = os.getenv("PASSWORD")
 CSV_FILE_NAME = "dataset.csv"
 CSV_PATH = f'../data/{CSV_FILE_NAME}'
+DELIMITATOR = "\\"
 
 def login_hugginchat():
     # Log in to huggingface and grant authorization to huggingchat
@@ -26,7 +28,12 @@ def login_hugginchat():
 
 def generate_abstract(abstract, cookies):
     chatbot = hugchat.ChatBot(cookies=cookies.get_dict())  # or cookie_path="usercookies/<email>.json"
-    return chatbot.chat(f"Paraphrase the following text: '{abstract}'")
+
+    # start a new conversation
+    id = chatbot.new_conversation()
+    chatbot.change_conversation(id)
+
+    return chatbot.chat(f"Paraphrase the following text, but please avoid bullet points: '{abstract}'")
 
     id = chatbot.new_conversation()
     chatbot.change_conversation(id)
@@ -39,43 +46,68 @@ def generate_abstract(abstract, cookies):
 
 
 def load_dataset():
-    arxiv_data = pd.read_csv("../data/arxiv_data.csv")
-    df = pd.DataFrame(arxiv_data)
-    abstracts = df['summaries']
+    abstracts = []
+    with open("../data/arxiv-metadata-oai-snapshot.json") as f:
+        for x in f:
+            # Update the regular expression pattern to handle the abstract field in JSON
+            pattern = r'abstract\":\"(.*?)\"'  # Updated pattern to capture the abstract
+            matches = re.findall(pattern, x, re.DOTALL)
+
+            if matches:
+                # If there are multiple matches, print all of them
+                for match in matches:
+                    abstracts.append(match.replace("\\n", ' ').replace("\\r", '').strip())
+            else:
+                print("Abstract not found in the data.")
 
     return abstracts
 
 
+def n_dataset_generated():
+    gen_data = pd.read_csv(CSV_PATH, delimiter=DELIMITATOR)
+    n = len(gen_data)
+
+    return n
+
+
 def save_to_csv(abstract, paraphrase_abstract):
     abstract = abstract.replace('\n', '')
-    print(abstract)
-    print("-"*40)
-    print(paraphrase_abstract)
-    
-    score = input('Score [0-1]: ')
+    # print(abstract)
+    # print("-"*40)
+    # print(paraphrase_abstract)
+
+    # score = input('Score [0-1]: ')
 
     with open(CSV_PATH, 'a') as file:
         # Write the content to the file
-        file.write(f"{abstract}\_._/ {paraphrase_abstract}\_._/ {score}\n")  # You can add a newline character if needed
+        file.write(f'"{abstract}"{DELIMITATOR}"{paraphrase_abstract}"\n')  # You can add a newline character if needed
 
-    os.system("clear")
+    # os.system("clear")
 
 if __name__ == '__main__':
-
     # log huggingchat
     print("[+] Logging to huggingchat")
     cookies = login_hugginchat()
 
-    # load_dataset
+    # load dataset
     print("[+] Loading abstracts")
     abstracts = load_dataset()
 
-    # generate csv
+    # load number of datasets generated
+    n = n_dataset_generated()
+    print(f"[+] {n} datasets has been generated")
+
+    # # generate csv
     print("[+] CSV generated")
     with open(CSV_PATH, 'a') as file:
         # Write the content to the file
-        file.write("abstract, paraphrase_abstract, score\n")  # You can add a newline character if needed
+        file.write(f"abstract{DELIMITATOR}paraphrase_abstract\n")  # You can add a newline character if needed
 
-    for abstract in abstracts:
-        gen = generate_abstract(abstract, cookies)
-        save_to_csv(abstract, gen)
+    print(f"[+] Total abstracts: {len(abstracts)}")
+    for i, abstract in enumerate(abstracts):
+        if i < n:
+            print ("[*] ")
+        else:
+            gen = generate_abstract(abstract, cookies)
+            save_to_csv(abstract, gen)
+            print(f"[*] Abstract {i+1} generated")
