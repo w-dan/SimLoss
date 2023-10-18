@@ -10,8 +10,11 @@ python = ">=3.9,<3.13"
 python-dotenv = "^1.0.0"
 hugchat = "^0.2.7"
 pandas = "^2.1.1"
+torch = "^1.6.0"
+transformers = "^4.4.2"
+scikit-learn = "^1.0.0"
 
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
