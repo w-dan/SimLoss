@@ -1,4 +1,5 @@
 import torch
+from torch import Tensor
 from torchmetrics import JaccardIndex
 
 class CustomJaccardLoss(torch.nn.Module):
@@ -11,59 +12,60 @@ class CustomJaccardLoss(torch.nn.Module):
 
         Methods:
             forward(output, target):
-                Calculate the Jaccard loss for non-"nan" values between the output and target tensors.
+                Calculate the Jaccard loss for non-"nan" values between the output and target torch.Tensors.
 
         """
         super(CustomJaccardLoss, self).__init__()
 
-    def forward(self, output, target):
+    def forward(self, output: Tensor, target: Tensor) -> Tensor:
         """
         Forward pass for the CustomJaccardLoss module.
 
         Args:
-            output (torch.Tensor): The model's predicted output.
-            target (torch.Tensor): The target values.
+            output (Tensor): The model's predicted output.
+            target (Tensor): The target values.
 
         Returns:
-            torch.Tensor: The Jaccard loss computed for the non-'nan' values in the output and target tensors.
+            Tensor: The Jaccard loss computed for the non-'nan' values in the output and target torch.Tensors.
         """
         # Find the indices where there are 'nan' values
         nan_indices = torch.isnan(output) | torch.isnan(target)
-        
+
         # Calculate the Jaccard loss only for non-'nan' values
-        loss = JaccardIndex(output[~nan_indices], 1 - target[~nan_indices])
+        loss = JaccardIndex()(output[~nan_indices], 1 - target[~nan_indices])
 
         return loss
 
-# Función de pérdida y optimizador
-# Función de pérdida personalizada para manejar valores "nan"
+
+# Loss function and optimizer
+# Custom loss function to handle "nan" values
 class CustomMSELoss(torch.nn.Module):
     """
     CustomMSELoss is a PyTorch custom loss module that calculates the Mean Squared Error (MSE) loss for non-"nan" values
-    between the output and target tensors. It masks out "nan" values to ensure a meaningful loss calculation.
+    between the output and target torch.Tensors. It masks out "nan" values to ensure a meaningful loss calculation.
 
     Methods:
         forward(output, target):
-            Calculate the MSE loss for non-"nan" values between the output and target tensors.
+            Calculate the MSE loss for non-"nan" values between the output and target torch.Tensors.
     """
 
     def __init__(self):
         super(CustomMSELoss, self).__init__()
 
-    def forward(self, output, target):
+    def forward(self, output: Tensor, target: Tensor) -> Tensor:
         """
-        Calculate the MSE loss for non-"nan" values between the output and target tensors.
+        Calculate the MSE loss for non-"nan" values between the output and target torch.Tensors.
 
         Args:
-            output (torch.Tensor): The output tensor.
-            target (torch.Tensor): The target tensor.
+            output (Tensor): The output Tensor.
+            target (Tensor): The target Tensor.
 
         Returns:
-            loss (torch.Tensor): The MSE loss for non-"nan" values between the output and target tensors.
+            loss (Tensor): The MSE loss for non-"nan" values between the output and target torch.Tensors.
         """
         # Find indices where there are "nan" values
         nan_indices = torch.isnan(output) | torch.isnan(target)
-        
+
         # Calculate the MSE loss only for values that are not "nan"
         loss = torch.mean((output[~nan_indices] - target[~nan_indices]) ** 2)
 
