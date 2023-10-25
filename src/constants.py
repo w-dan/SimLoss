@@ -1,0 +1,5 @@
+DATASET_PATH = "../data/SimLoss.csv"
+
+MAX_LENGTH = 128
+BATCH_SIZE = 32
+NUM_EPOCHS = 5
