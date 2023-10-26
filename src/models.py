@@ -176,7 +176,7 @@ class SimilarityModel_ReLU(nn.Module):
             Computes the similarity score between input sequences.
     """
 
-    def __init__(self, model: PreTrainedModel):
+    def __init__(self, model: PreTrainedModel, device='cuda:0'):
         """
         Initialize the SimilarityModel_ReLU.
 
@@ -184,10 +184,12 @@ class SimilarityModel_ReLU(nn.Module):
             model (PreTrainedModel): The pre-trained model (e.g., BERT) to extract features.
         """
         super(SimilarityModel_ReLU, self).__init__()
-        self.bert = model
-        self.fc1 = nn.Linear(768, 128)  # 768 is the dimension of BERT's output
+        self.bert = model.to(device)
+        self.fc1 = nn.Linear(768, 128).to(device)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(128, 1)
+        self.fc2 = nn.Linear(128, 1).to(device)
+
+        self.device = device
 
     def forward(
         self,
@@ -212,10 +214,19 @@ class SimilarityModel_ReLU(nn.Module):
             The forward method takes input token IDs and attention masks, passes them through the pre-trained model,
             and computes similarity scores using a ReLU activation function.
         """
-        outputs_abstract = self.bert(input_ids_abstract, attention_mask_abstract)
+        inputs_abstract = {
+            "input_ids": input_ids_abstract.to(self.device),
+            "attention_mask": attention_mask_abstract.to(self.device),
+        }
+        inputs_paraphrase = {
+            "input_ids": input_ids_paraphrase.to(self.device),
+            "attention_mask": attention_mask_paraphrase.to(self.device),
+        }
+
+        outputs_abstract = self.bert(**inputs_abstract)
         pooled_output_abstract = outputs_abstract["last_hidden_state"][:, 0]
 
-        outputs_paraphrase = self.bert(input_ids_paraphrase, attention_mask_paraphrase)
+        outputs_paraphrase = self.bert(**inputs_paraphrase)
         pooled_output_paraphrase = outputs_paraphrase["last_hidden_state"][:, 0]
 
         x_abstract = self.fc1(pooled_output_abstract)
@@ -224,7 +235,5 @@ class SimilarityModel_ReLU(nn.Module):
         x_paraphrase = self.fc1(pooled_output_paraphrase)
         x_paraphrase = self.relu(x_paraphrase)
 
-        score = self.fc2(
-            x_abstract - x_paraphrase
-        )  # Compute similarity score using ReLU
+        score = self.fc2(x_abstract - x_paraphrase)
         return score

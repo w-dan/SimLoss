@@ -3,7 +3,7 @@ from torch import Tensor
 from torchmetrics import JaccardIndex
 
 class CustomJaccardLoss(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, device='cuda:0'):
         """
         Initializes the CustomJaccardLoss module.
 
@@ -16,6 +16,10 @@ class CustomJaccardLoss(torch.nn.Module):
 
         """
         super(CustomJaccardLoss, self).__init__()
+        self.device = device
+    
+    def set_jaccard_classes(self, num_classes):
+        self.jaccard = JaccardIndex(task='multiclass', num_classes=num_classes).to(self.device)
 
     def forward(self, output: Tensor, target: Tensor) -> Tensor:
         """
@@ -28,11 +32,14 @@ class CustomJaccardLoss(torch.nn.Module):
         Returns:
             Tensor: The Jaccard loss computed for the non-'nan' values in the output and target torch.Tensors.
         """
+        output = output.to(self.device)
+        target = target.to(self.device)
+
         # Find the indices where there are 'nan' values
         nan_indices = torch.isnan(output) | torch.isnan(target)
 
         # Calculate the Jaccard loss only for non-'nan' values
-        loss = JaccardIndex()(output[~nan_indices], 1 - target[~nan_indices])
+        loss = self.jaccard(output[~nan_indices], 1 - target[~nan_indices])
 
         return loss
 
@@ -49,8 +56,9 @@ class CustomMSELoss(torch.nn.Module):
             Calculate the MSE loss for non-"nan" values between the output and target torch.Tensors.
     """
 
-    def __init__(self):
+    def __init__(self, device='cuda:0'):
         super(CustomMSELoss, self).__init__()
+        self.device = device
 
     def forward(self, output: Tensor, target: Tensor) -> Tensor:
         """
@@ -63,6 +71,9 @@ class CustomMSELoss(torch.nn.Module):
         Returns:
             loss (Tensor): The MSE loss for non-"nan" values between the output and target torch.Tensors.
         """
+        output = output.to(self.device)
+        target = target.to(self.device)
+
         # Find indices where there are "nan" values
         nan_indices = torch.isnan(output) | torch.isnan(target)
 
