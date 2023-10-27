@@ -4,14 +4,18 @@ from models import SimilarityModel_ReLU
 from utils import train_model
 from constants import DATASET_PATH
 import torch
+import torch.nn as nn
 
 torch.manual_seed(42)
-torch.use_deterministic_algorithms(True)
+# torch.use_deterministic_algorithms(True)
+
 
 if torch.cuda.is_available():
-    device = torch.device('cuda:0')
+    device = torch.device('cuda')
+    num_devices = torch.cuda.device_count()
 else:
     device = torch.device('cpu')
+    num_devices = 1
 
 # Cargar el conjunto de datos desde tu archivo CSV
 
@@ -22,6 +26,9 @@ model = BertModel.from_pretrained("bert-base-uncased")
 similarity_model_relu = SimilarityModel_ReLU(model, device)
 # similarity_model_none = SimilarityModel_None(model)
 # similarity_model_cosine = SimilarityModel_Cosine(model)
+
+if num_devices > 1:
+    model = nn.DataParallel(similarity_model_relu)
 
 # Loss instance
 rmse_criterion = CustomMSELoss(device)

@@ -1,4 +1,4 @@
-DATASET_PATH = "../data/SimLoss.csv"
+DATASET_PATH = "../data/combinados.csv"
 
 MAX_LENGTH = 128
 BATCH_SIZE = 32
