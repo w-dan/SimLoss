@@ -2,14 +2,22 @@ import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, Dataset
+from nltk.util import ngrams
+from nltk.metrics import jaccard_distance
 from sklearn.model_selection import train_test_split
 from transformers import BertTokenizer, get_linear_schedule_with_warmup
 from torch.optim import AdamW
 from scipy.stats import pearsonr
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 from constants import MAX_LENGTH, BATCH_SIZE, NUM_EPOCHS
 
+def jaccard_score(text1, text2):
+    set1 = set(ngrams(text1.split(), 1))
+    set2 = set(ngrams(text2.split(), 1))
+    return 1 - jaccard_distance(set1, set2)
 
 # Custom class for dataset
 class CustomDataset(Dataset):
@@ -117,13 +125,31 @@ def train_model(
         save_path (str, optional): Path to save the plot of training progress (default is "").
 
     Returns:
-        None
+        pd.DataFrame: A DataFrame containing the original data with additional columns for model predictions.
 
     This function performs training for a specified number of epochs. It uses the AdamW optimizer with a learning rate
     scheduler to update the model's parameters. Training progress is printed at each epoch, displaying the average loss.
+    Additionally, it calculates and appends model predictions, Jaccard scores, and cosine similarity scores to the input data.
+    The function returns a DataFrame containing the original data with added columns for model predictions, Jaccard scores,
+    and cosine similarity scores for both the test and validation sets.
     """
 
     train_loader, test_loader, val_loader, train_df, test_df, val_df = data_process(path)
+
+    test_df["Jaccard Score"] = [jaccard_score(row["abstract"], row["paraphrase_abstract"]) for  _, row in test_df.iterrows()]
+    val_df["Jaccard Score"] = [jaccard_score(row["abstract"], row["paraphrase_abstract"]) for _, row in val_df.iterrows()]
+
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix_test_original = tfidf_vectorizer.fit_transform(test_df["abstract"])
+    tfidf_matrix_test_paraphrase = tfidf_vectorizer.transform(test_df["paraphrase_abstract"])
+    cosine_sim_test = cosine_similarity(tfidf_matrix_test_original, tfidf_matrix_test_paraphrase)
+
+    tfidf_matrix_val_original = tfidf_vectorizer.fit_transform(val_df["abstract"])
+    tfidf_matrix_val_paraphrase = tfidf_vectorizer.transform(val_df["paraphrase_abstract"])
+    cosine_sim_val = cosine_similarity(tfidf_matrix_val_original, tfidf_matrix_val_paraphrase)
+
+    test_df["Cosine Score"] = [cosine_sim_test[0][0]] * len(test_df)
+    val_df["Cosine Score"] = [cosine_sim_val[0][0]] * len(val_df)
 
     train_losses = []
     val_losses = []
@@ -134,6 +160,8 @@ def train_model(
         optimizer, num_warmup_steps=0, num_training_steps=len(train_loader) * NUM_EPOCHS
     )
     
+    output_df = None
+
     for epoch in range(NUM_EPOCHS):
         model.train()
         total_loss = 0.0
@@ -165,20 +193,26 @@ def train_model(
         print(f"Epoch {epoch+1}/{NUM_EPOCHS}, Loss: {average_loss}")
 
         # Test the model
-        correlation = test_model(test_loader, test_df, model)
+        correlation, test_df_with_predictions = test_model(test_loader, test_df, model)
         correlation_scores.append(correlation)
 
         # Validate the model
-        average_val_loss = val_model(val_loader, model, criterion)
+        average_val_loss, val_df_with_predictions = val_model(val_loader, model, criterion, val_df)
         val_losses.append(average_val_loss)
 
-    print("LAST: ", len(train_losses))
+        if output_df is None:
+            output_df = pd.concat([test_df_with_predictions, val_df_with_predictions], ignore_index=True)
+        else:
+            output_df = pd.concat([output_df, test_df_with_predictions, val_df_with_predictions], ignore_index=True)
+
     plot_model(correlation_scores, train_losses, val_losses, save_path)
+
+    return output_df
 
 
 def test_model(test_loader: DataLoader, test_df: pd.DataFrame, model: torch.nn.Module):
     """
-    Test a PyTorch neural network model's performance on a given test dataset.
+    Evaluate a PyTorch neural network model's performance on a given test dataset and return predictions.
 
     Parameters:
     - test_loader (DataLoader): A PyTorch DataLoader containing the test dataset.
@@ -187,9 +221,11 @@ def test_model(test_loader: DataLoader, test_df: pd.DataFrame, model: torch.nn.M
 
     Returns:
     - correlation (float): The Pearson correlation coefficient between the model's predictions and the true scores.
+    - output_df (pd.DataFrame): A DataFrame with the test data and an additional "Predicted Score" column.
 
-    The function evaluates the model's performance on the test data by making predictions and calculating
+    This function evaluates the model's performance on the test data by making predictions and calculating
     the Pearson correlation coefficient between the predicted scores and the true scores in the test DataFrame.
+    Additionally, it returns a DataFrame with the original test data and an extra column containing the model's predictions.
     """
 
     model.eval()
@@ -214,17 +250,38 @@ def test_model(test_loader: DataLoader, test_df: pd.DataFrame, model: torch.nn.M
     predicted_scores = [p.item() for p in predictions]
     true_scores = test_df["Score (0-10)"].tolist()
 
-    correlation, _ = pearsonr(predicted_scores, true_scores)  # Utilizar pearsonr
-    print(
-        f"Correlación entre las predicciones y el campo 'Score' en el conjunto de prueba: {correlation}"
-    )
-    return correlation
+    correlation, _ = pearsonr(predicted_scores, true_scores)
+    print(f"Correlation between predictions and the 'Score' field in the test dataset: {correlation}")
+
+    output_df = test_df.copy()
+    output_df["Predicted Score"] = predicted_scores
+
+    return correlation, output_df
 
 def val_model(
-    val_loader: DataLoader, model: torch.nn.Module, criterion: torch.nn.Module
+    val_loader: DataLoader, model: torch.nn.Module, criterion: torch.nn.Module, val_df: pd.DataFrame
 ):
+    """
+    Evaluate a PyTorch neural network model's performance on a given validation dataset and return predictions.
+
+    Parameters:
+    - val_loader (DataLoader): A PyTorch DataLoader containing the validation dataset.
+    - model (torch.nn.Module): A PyTorch neural network model for prediction.
+    - criterion (torch.nn.Module): Loss criterion for validation.
+    - val_df (pd.DataFrame): A Pandas DataFrame containing the validation data, including a "score" column.
+
+    Returns:
+    - average_val_loss (float): The average loss calculated during validation.
+    - output_df (pd.DataFrame): A DataFrame with the validation data and an additional "Predicted Score" column.
+
+    This function evaluates the model's performance on the validation data by making predictions and calculating the
+    average loss using the specified loss criterion. It also returns a DataFrame with the original validation data
+    and an extra column containing the model's predictions.
+    """
+
     model.eval()
     val_loss = 0.0
+    predictions = []
     with torch.no_grad():
         for batch in val_loader:
             input_ids_abstract = batch["input_ids_abstract"]
@@ -241,26 +298,46 @@ def val_model(
             )
             loss = criterion(output, score.view(-1, 1))
             val_loss += loss.item()
+            predictions.extend(output)
 
     average_val_loss = val_loss / len(val_loader)
-    return average_val_loss
+
+    output_df = val_df.copy()
+    predicted_scores = [p.item() for p in predictions]
+    output_df["Predicted Score"] = predicted_scores
+
+    return average_val_loss, output_df
 
 
 def plot_model(
     correlation_scores: list, train_losses: list, val_losses: list, save_path: str = ""
 ):
+    """
+    Plot the training progress and correlation scores of a neural network model.
+
+    Parameters:
+    - correlation_scores (list): A list of correlation scores for each epoch.
+    - train_losses (list): A list of training losses for each epoch.
+    - val_losses (list): A list of validation losses for each epoch.
+    - save_path (str, optional): Path to save the plot as an image (default is "").
+
+    This function creates a two-panel plot to visualize the training progress and correlation scores of a neural network model
+    across epochs. The left panel displays training and validation losses over epochs, while the right panel shows the
+    correlation scores over epochs. If 'save_path' is provided, the plot is saved as an image; otherwise, it is displayed.
+    """
+
     plt.figure(figsize=(10, 5))
     plt.subplot(1, 2, 1)
-    plt.plot(range(1, NUM_EPOCHS + 1), train_losses, label="Entrenamiento")
-    plt.plot(range(1, NUM_EPOCHS + 1), val_losses, label="Validación")
-    plt.xlabel("Épocas")
-    plt.ylabel("Pérdida")
+    plt.plot(range(1, NUM_EPOCHS + 1), train_losses, label="Training")
+    plt.plot(range(1, NUM_EPOCHS + 1), val_losses, label="Validation")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
     plt.legend()
 
     plt.subplot(1, 2, 2)
-    plt.plot(range(1, NUM_EPOCHS + 1), correlation_scores, label="Correlación (Prueba)")
-    plt.xlabel("Épocas")
-    plt.ylabel("Correlación")
+    plt.plot(range(1, NUM_EPOCHS + 1), correlation_scores, label="Correlation")
+    plt.xlabel("Epochs")
+    plt.ylabel("Correlation")
     plt.legend()
 
     plt.tight_layout()
