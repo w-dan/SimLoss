@@ -1,47 +1,43 @@
 import torch
 from torch import Tensor
-from torchmetrics import JaccardIndex
 
-class CustomJaccardLoss(torch.nn.Module):
-    def __init__(self, device='cuda:0'):
+class JaccardSimilarity(torch.nn.Module):
+    def __init__(self, device='cpu'):
         """
-        Initializes the CustomJaccardLoss module.
+        Initializes the JaccardSimilarity module.
 
-        This loss function computes the Jaccard loss between the predicted output and the target, while excluding
-        elements with 'nan' values.
+        Args:
+            device (str): Device to use, e.g., 'cpu' or 'cuda:0'. Default is 'cuda:0'.
 
         Methods:
             forward(output, target):
-                Calculate the Jaccard loss for non-"nan" values between the output and target torch.Tensors.
+                Calculate the Jaccard similarity between the predicted output and the target torch.Tensors.
 
         """
-        super(CustomJaccardLoss, self).__init__()
+        super(JaccardSimilarity, self).__init__()
         self.device = device
-    
-    def set_jaccard_classes(self, num_classes):
-        self.jaccard = JaccardIndex(task='multiclass', num_classes=num_classes).to(self.device)
 
     def forward(self, output: Tensor, target: Tensor) -> Tensor:
         """
-        Forward pass for the CustomJaccardLoss module.
+        Forward pass for the JaccardSimilarity module.
 
         Args:
             output (Tensor): The model's predicted output.
             target (Tensor): The target values.
 
         Returns:
-            Tensor: The Jaccard loss computed for the non-'nan' values in the output and target torch.Tensors.
+            Tensor: The Jaccard similarity computed for the output and target torch.Tensors.
         """
+        # Ensure both tensors are on the same device
         output = output.to(self.device)
         target = target.to(self.device)
 
-        # Find the indices where there are 'nan' values
-        nan_indices = torch.isnan(output) | torch.isnan(target)
+        intersection = (output * target).sum()
+        union = (output + target).sum() - intersection
 
-        # Calculate the Jaccard loss only for non-'nan' values
-        loss = self.jaccard(output[~nan_indices], 1 - target[~nan_indices])
+        jaccard = intersection / union
 
-        return loss
+        return jaccard
 
 
 # Loss function and optimizer
@@ -56,7 +52,7 @@ class CustomMSELoss(torch.nn.Module):
             Calculate the MSE loss for non-"nan" values between the output and target torch.Tensors.
     """
 
-    def __init__(self, device='cuda:0'):
+    def __init__(self, device='cpu'):
         super(CustomMSELoss, self).__init__()
         self.device = device
 
@@ -76,8 +72,10 @@ class CustomMSELoss(torch.nn.Module):
 
         # Find indices where there are "nan" values
         nan_indices = torch.isnan(output) | torch.isnan(target)
+        valid_indices = torch.nonzero(~nan_indices, as_tuple=True)
+        valid_indices = valid_indices[0]
 
         # Calculate the MSE loss only for values that are not "nan"
-        loss = torch.mean((output[~nan_indices] - target[~nan_indices]) ** 2)
+        loss = torch.mean((output[valid_indices] - target[valid_indices]) ** 2)
 
         return loss

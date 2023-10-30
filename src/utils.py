@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, Dataset
@@ -7,12 +6,10 @@ from sklearn.model_selection import train_test_split
 from transformers import BertTokenizer, get_linear_schedule_with_warmup
 from torch.optim import AdamW
 from scipy.stats import pearsonr
-from losses import CustomJaccardLoss
 
 
 from constants import MAX_LENGTH, BATCH_SIZE, NUM_EPOCHS
 
-import pdb
 
 # Custom class for dataset
 class CustomDataset(Dataset):
@@ -59,7 +56,7 @@ def data_process(path: str):
     Process data for a natural language processing task using BERT.
 
     Args:
-        path (str): Path to the CSV file containing the data with columns 'abstract', 'paraphrase_abstract', and 'Score (0-10)'.
+        path (str): Path to the CSV file containing the data with columns 'abstract', 'paraphrase_abstract', 'Score (0-10)', and 'Not/Bad generated'.
 
     Returns:
         Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]: A tuple containing the following elements:
@@ -70,7 +67,7 @@ def data_process(path: str):
         5. test_df (pd.DataFrame): DataFrame for the testing data.
         6. val_df (pd.DataFrame): DataFrame for the validation data.
 
-    This function reads the data from a CSV file, splits it into training, testing and validating sets, tokenizes the text using BERT tokenizer,
+    This function reads the data from a CSV file, filters the records with 'Not/Bad generated' as 'False', splits it into training, testing and validating sets, tokenizes the text using BERT tokenizer,
     and returns DataLoaders for all sets along with the corresponding DataFrames.
 
     Example usage:
@@ -79,7 +76,9 @@ def data_process(path: str):
     ```
     """
 
-    df = pd.read_csv(path, usecols=["abstract", "paraphrase_abstract", "Score (0-10)"])
+    df = pd.read_csv(path, usecols=["abstract", "paraphrase_abstract", "Score (0-10)", "Not/Bad generated"])
+    df = df[df['Not/Bad generated'] == False]
+    df.drop(columns=["Not/Bad generated"], inplace=True)
 
     # Dataset division in 'train' and 'test'
     train_df, temp_df = train_test_split(df, test_size=0.2, random_state=42)
@@ -126,12 +125,6 @@ def train_model(
 
     train_loader, test_loader, val_loader, train_df, test_df, val_df = data_process(path)
 
-    if isinstance(criterion, CustomJaccardLoss):
-        scores = set()
-        scores.update(train_df["Score (0-10)"], test_df["Score (0-10)"], val_df["Score (0-10)"])
-        criterion.set_jaccard_classes(len({x for x in scores if x==x}))
-        del scores
-
     train_losses = []
     val_losses = []
     correlation_scores = []
@@ -146,11 +139,11 @@ def train_model(
         total_loss = 0.0
 
         for batch in train_loader:
-            input_ids_abstract = batch["input_ids_abstract"]
-            attention_mask_abstract = batch["attention_mask_abstract"]
-            input_ids_paraphrase = batch["input_ids_paraphrase"]
-            attention_mask_paraphrase = batch["attention_mask_paraphrase"]
-            score = batch["score"]
+            input_ids_abstract = batch["input_ids_abstract"].to(criterion.device)
+            attention_mask_abstract = batch["attention_mask_abstract"].to(criterion.device)
+            input_ids_paraphrase = batch["input_ids_paraphrase"].to(criterion.device)
+            attention_mask_paraphrase = batch["attention_mask_paraphrase"].to(criterion.device)
+            score = batch["score"].to(criterion.device)
 
             optimizer.zero_grad()
             output = model(
@@ -159,6 +152,7 @@ def train_model(
                 input_ids_paraphrase,
                 attention_mask_paraphrase,
             )
+
             loss = criterion(output, score.view(-1, 1))
             loss.backward()
             optimizer.step()

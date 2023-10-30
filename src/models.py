@@ -36,7 +36,7 @@ class SimilarityModel_Cosine(nn.Module):
                 Tensor: A tensor containing the similarity score.
     """
 
-    def __init__(self, model: PreTrainedModel):
+    def __init__(self, model: PreTrainedModel, device='cpu'):
         """
         Initialize the SimilarityModel_Cosine.
 
@@ -45,10 +45,11 @@ class SimilarityModel_Cosine(nn.Module):
                 with a dimension of 768.
         """
         super(SimilarityModel_Cosine, self).__init__()
-        self.bert = model
-        self.fc1 = nn.Linear(768, 128)  # 768 is the output dimension of BERT
+        self.device = device
+        self.bert = model.to(self.device)
+        self.fc1 = nn.Linear(768, 128).to(self.device)
         self.cosine = nn.CosineSimilarity(dim=1)
-        self.fc2 = nn.Linear(128, 1)
+        
 
     def forward(
         self,
@@ -73,6 +74,11 @@ class SimilarityModel_Cosine(nn.Module):
             The forward method takes input token IDs and attention masks, passes them through the pre-trained model,
             and computes similarity scores using cosine similarity.
         """
+        input_ids_abstract = input_ids_abstract.to(self.device)
+        attention_mask_abstract = attention_mask_abstract.to(self.device)
+        input_ids_paraphrase = input_ids_paraphrase.to(self.device)
+        attention_mask_paraphrase = attention_mask_paraphrase.to(self.device)
+
         outputs_abstract = self.bert(input_ids_abstract, attention_mask_abstract)
         pooled_output_abstract = outputs_abstract["last_hidden_state"][:, 0]
 
@@ -82,13 +88,10 @@ class SimilarityModel_Cosine(nn.Module):
         x_abstract = self.fc1(pooled_output_abstract)
         x_paraphrase = self.fc1(pooled_output_paraphrase)
 
-        x_abstract = F.normalize(x_abstract, dim=1)  # Normalize the features
-        x_paraphrase = F.normalize(x_paraphrase, dim=1)  # Normalize the features
+        x_abstract = F.normalize(x_abstract, dim=1)
+        x_paraphrase = F.normalize(x_paraphrase, dim=1)
 
-        similarity_score = self.cosine(
-            x_abstract, x_paraphrase
-        )  # Compute cosine similarity
-        score = self.fc2(similarity_score.view(-1, 1))
+        score = self.cosine(x_abstract, x_paraphrase)
         return score
 
 
@@ -111,7 +114,7 @@ class SimilarityModel_None(nn.Module):
             Computes the similarity score between input pairs using BERT embeddings.
     """
 
-    def __init__(self, model: PreTrainedModel):
+    def __init__(self, model: PreTrainedModel, device='cpu'):
         """
         Initialize the SimilarityModel_None.
 
@@ -119,9 +122,11 @@ class SimilarityModel_None(nn.Module):
             model (PreTrainedModel): A pre-trained model (e.g., BERT) or any model producing BERT-style embeddings.
         """
         super(SimilarityModel_None, self).__init__()
-        self.bert = model
-        self.fc1 = nn.Linear(768, 128)  # 768 is the output dimension of BERT
-        self.fc2 = nn.Linear(128, 1)
+        self.bert = model.to(device)
+        self.fc1 = nn.Linear(768, 128).to(device)
+        self.fc2 = nn.Linear(128, 1).to(device)
+
+        self.device = device
 
     def forward(
         self,
@@ -142,6 +147,11 @@ class SimilarityModel_None(nn.Module):
         Returns:
             Tensor: Tensor containing similarity scores.
         """
+        input_ids_abstract = input_ids_abstract.to(self.device)  # Mueve los tensores a la GPU o CPU
+        attention_mask_abstract = attention_mask_abstract.to(self.device)
+        input_ids_paraphrase = input_ids_paraphrase.to(self.device)
+        attention_mask_paraphrase = attention_mask_paraphrase.to(self.device)
+        
         outputs_abstract = self.bert(input_ids_abstract, attention_mask_abstract)
         pooled_output_abstract = outputs_abstract["last_hidden_state"][:, 0]
 
